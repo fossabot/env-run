@@ -23,7 +23,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/joho/godotenv"
@@ -59,47 +59,35 @@ func main() {
 		log.Printf("Info: Env file %s not found, skipping loading", *envPath)
 	}
 
-	// 3. Prepare to execute command
+	// 3. Execute command (Process Replacement)
 	cmdName := args[0]
-	cmdArgs := args[1:]
-	cmd := exec.Command(cmdName, cmdArgs...)
+	cmdArgs := args
 
-	// Set working directory
-	if *workDir != "" {
-		cmd.Dir = *workDir
-	}
-
-	// Inherit and inject environment variables
-	cmd.Env = os.Environ()
-
-	// Bind standard I/O
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// 4. Signal Forwarding
-	// Ensure signals like Ctrl+C are passed to the child process
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	go func() {
-		for sig := range sigs {
-			if cmd.Process != nil {
-				cmd.Process.Signal(sig)
-			}
-		}
-	}()
-
-	// 5. Start the program
-	if err := cmd.Start(); err != nil {
-		log.Fatalf("Error: Unable to start program: %v", err)
-	}
-
-	// Wait for program to finish and return correct exit code
-	err := cmd.Wait()
+	// Find the absolute path of the command
+	binary, err := exec.LookPath(cmdName)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
+		log.Fatalf("Error: Command not found: %s", cmdName)
+	}
+	// Make sure the binary path is absolute before changing directory
+	binary, err = filepath.Abs(binary)
+	if err != nil {
+		log.Fatalf("Error: Unable to resolve absolute path of executable: %v", err)
+	}
+
+	// Set working directory if requested
+	if *workDir != "" {
+		if err := os.Chdir(*workDir); err != nil {
+			log.Fatalf("Error: Unable to change directory to %s: %v", *workDir, err)
 		}
-		os.Exit(1)
+	}
+
+	// EXEC syscall replaces the current process with the new one.
+	// We pass:
+	// 1. The path to the binary
+	// 2. The arguments (must include the command name as the first argument)
+	// 3. The environment variables
+	env := os.Environ()
+	if err := syscall.Exec(binary, cmdArgs, env); err != nil {
+		log.Fatalf("Error: Failed to execute command: %v", err)
 	}
 }
