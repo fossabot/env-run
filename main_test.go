@@ -15,7 +15,7 @@ func TestMain(m *testing.M) {
 	// Build the binary
 	// We assume we are in the directory containing main.go
 	if err := exec.Command("go", "build", "-o", binaryName, ".").Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to build binary: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	// Cleanup
-	os.Remove(binaryName)
+	_ = os.Remove(binaryName)
 	os.Exit(code)
 }
 
@@ -51,7 +51,11 @@ func TestEnvRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+
+	// Cleanup temp dir after tests
+	t.Cleanup(func() {
+		_ = os.RemoveAll(tmpDir)
+	})
 
 	tests := []struct {
 		name           string
